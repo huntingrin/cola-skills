@@ -1,0 +1,4 @@
+interface:
+  display_name: "联通积分兑换（含话费短信）"
+  short_description: "查询联通积分，选流量包、语音包或影音组合；话费可走 10010 短信方法"
+  default_prompt: "用 $cucc-points-redeem 查我的联通积分，列出流量包、语音包、影音组合和话费短信方法，先不兑换。"

@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+.venv*/
+
+# 原始浏览器证据与会话数据（含账号、页面快照、截图）
+research/*/evidence/
+research/*/browser/
+trials/*/evidence/
+trials/*/browser/
+
+# 实测脚本含完整账号，公开仓库不收录
+trials/live-20261021/round-*.mjs

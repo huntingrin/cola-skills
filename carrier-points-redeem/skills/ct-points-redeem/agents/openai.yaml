@@ -1,0 +1,4 @@
+interface:
+  display_name: "电信积分兑话费"
+  short_description: "移动端最短路径查询并兑换本机话费，登录与支付验证由本人完成"
+  default_prompt: "用 $ct-points-redeem 打开中国电信话费专区，查我的积分和可兑面额，先不兑换。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "三网积分兑换"
+  short_description: "在 Cola 查询三网积分，按需兑换本机话费、流量、语音或影音权益"
+  default_prompt: "用 $carrier-points-redeem 查我的运营商积分和可兑内容，先不兑换。"

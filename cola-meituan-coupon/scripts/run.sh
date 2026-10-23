@@ -1,7 +1,6 @@
 #!/bin/bash
-# Cola 美团领券 · 环境准备（Mac / Linux）
-# 找 Python 3.8+；没有就免密码装一个到 ~/.cola/runtime/python；再装 httpx。
-# 成功后把 Python 路径写进 scripts/.python，最后一行输出 JSON。
+# Cola 美团领券 · 入口（Mac / Linux）：bash run.sh <命令> [参数]
+# 找 Python 3.8+（只用标准库）；没有就免密码装一个到 ~/.cola/runtime/python，再执行 mt.py。
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 RT="$HOME/.cola/runtime/python"
@@ -10,8 +9,7 @@ log(){ echo "[setup] $*" >&2; }
 ok(){ "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)' >/dev/null 2>&1; }
 
 find_py(){
-  local cands=("$RT/bin/python3")
-  [ "${COLA_SETUP_NO_SYSTEM:-}" = 1 ] || cands+=("$(command -v python3 2>/dev/null)" "$(command -v python 2>/dev/null)")
+  local cands=("$RT/bin/python3" "$(command -v python3 2>/dev/null)" "$(command -v python 2>/dev/null)")
   for p in "${cands[@]}"; do
     [ -n "$p" ] && [ -x "$p" ] || continue
     # Mac 没装命令行工具时 /usr/bin/python3 只是个壳，一调用就弹安装框，跳过
@@ -48,19 +46,5 @@ install_py(){
 }
 
 PY="$(find_py)" || { install_py && PY="$(find_py)"; } || {
-  echo '{"ok":false,"error":"PYTHON_INSTALL_FAILED"}'; exit 1; }
-log "用 $PY"
-
-if ! "$PY" -c 'import httpx' >/dev/null 2>&1; then
-  U="--user"; case "$PY" in "$RT"/*) U="";; esac
-  "$PY" -m ensurepip $U >/dev/null 2>&1 || true
-  for IDX in "https://pypi.tuna.tsinghua.edu.cn/simple" "https://mirrors.aliyun.com/pypi/simple" "https://pypi.org/simple"; do
-    "$PY" -m pip install -q $U --disable-pip-version-check -i "$IDX" httpx >&2 && break
-    # 系统 Python 被系统锁住时（externally-managed），改装到我们自己的目录
-    "$PY" -m pip install -q $U --break-system-packages --disable-pip-version-check -i "$IDX" httpx >&2 && break
-  done
-fi
-"$PY" -c 'import httpx' >/dev/null 2>&1 || { echo '{"ok":false,"error":"HTTPX_INSTALL_FAILED"}'; exit 1; }
-
-echo "$PY" > "$DIR/.python"
-echo "{\"ok\":true,\"python\":\"$PY\"}"
+  echo "电脑上缺个运行环境，我没装上，你把这段报错截图发给鲁班。"; exit 1; }
+exec "$PY" -B "$DIR/mt.py" "$@"

@@ -1,10 +1,9 @@
-﻿# Cola 美团领券 · 环境准备（Windows）
-# 用法：powershell -ExecutionPolicy Bypass -File setup.ps1
-# 找 Python 3.8+；没有就免管理员装一个到 %USERPROFILE%\.cola\runtime\python；再装 httpx。
-# 成功后把 Python 路径写进 scripts\.python，最后一行输出 JSON。
+﻿# Cola 美团领券 · 入口（Windows）：powershell -ExecutionPolicy Bypass -File run.ps1 <命令> [参数]
+# 找 Python 3.8+（只用标准库）；没有就免管理员装一个到 %USERPROFILE%\.cola\runtime\python，再执行 mt.py。
 $ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"   # 关掉进度条，否则 PowerShell 5 下载极慢
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RT = Join-Path $env:USERPROFILE ".cola\runtime\python"
 $PYV = "3.12.7"; $TAG = "20241016"
@@ -53,20 +52,6 @@ function Install-Py {
 
 $PY = Find-Py
 if (-not $PY) { if (Install-Py) { $PY = Find-Py } }
-if (-not $PY) { '{"ok":false,"error":"PYTHON_INSTALL_FAILED"}'; exit 1 }
-[Console]::Error.WriteLine("[setup] 用 $PY")
-
-& $PY -c "import httpx" 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  $u = if ($PY.StartsWith($RT)) { @() } else { @("--user") }
-  & $PY -m ensurepip @u 2>$null | Out-Null
-  foreach ($idx in "https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple", "https://pypi.org/simple") {
-    & $PY -m pip install -q @u --disable-pip-version-check -i $idx httpx
-    if ($LASTEXITCODE -eq 0) { break }
-  }
-}
-& $PY -c "import httpx" 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { '{"ok":false,"error":"HTTPX_INSTALL_FAILED"}'; exit 1 }
-
-Set-Content -Path (Join-Path $Dir ".python") -Value $PY -Encoding UTF8
-'{"ok":true,"python":"' + $PY.Replace('\', '\\') + '"}'
+if (-not $PY) { "电脑上缺个运行环境，我没装上，你把这段报错截图发给鲁班。"; exit 1 }
+& $PY -B (Join-Path $Dir "mt.py") @args
+exit $LASTEXITCODE

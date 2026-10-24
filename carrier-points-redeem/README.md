@@ -10,7 +10,6 @@
 
 ## Cola 如何预装和启动
 
-- 运营在来财后台把本技能挂到一个 `onboarding` 活动上。Cola 启动约 5 秒后调用 `GET /v1/laicai/skills`，按 Skill Hub 条目把它装进技能目录并标记为 `cola-laicai` 组（`apps/agent-runtime/src/skills/laicai-skills.ts`），之后每小时同步一次。来财组技能不进模型的技能列表，只能由卡片按名称调用。
 - 用户在新手引导点卡片后，桌面在新侧边对话里发送 `/carrier-points-redeem 帮我领取这个福利：<标题>…`，并附带活动 ID 说明（`laicai-agent-task.ts`）。运行时把 `SKILL.md` 正文直接内联进这条消息（`explicit-skills.ts`），所以入口不需要再被读取。
 - 流程结束时 Agent 调一次 `laicai_task_done`，桌面据此在回复下方展示下一个新手福利。
 - 源仓库形式的条目（无 package 版本）装过一次后不会自动更新；修改本技能后需在 Skill Hub 发布新 package 版本，已安装用户才会同步到新内容。

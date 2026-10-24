@@ -10,7 +10,7 @@
 | 联通 GUIDE / browser-flow | 已知用途或商品直接筛选；文字话费可绕过商城；页面身份、弹页和恢复只按需补读 |
 | 电信 GUIDE / phonefee / browser-flow | 直接打开完整 SSO 登录链接，区分 appCode=CALLS 与 channelCode=HGOKHD；移动 UA 与日期在登录后检查，能力缺口只阻止下单；不以链接过期为由重建订单；现金条件与额外 PC 登录按需核对 |
 | 移动 GUIDE | 指定金额直接输入；自定义最小额按当前页面；验证接回后先查结果 |
-| SKILL.md / references / scripts/observe.js | 面向 Cola 新手引导：入口内联移动话费与联通商城办理快速流程、电信手机入口，联通短信文字仅在用户明确问时输出；不收手机号、不写断点文件；Cola `browser` 延迟加载调用方式、`laicai_task_done` 收尾、按需只读摘要和号码脱敏 |
+| SKILL.md / references / scripts/observe.js | 面向 Cola 新手引导：入口内联移动话费快速流程与电信手机入口，联通沿用联通 GUIDE；不收手机号、不写断点文件；Cola `browser` 延迟加载调用方式、`laicai_task_done` 收尾、按需只读摘要和号码脱敏 |
 
 子流程原有的两份 `scripts/transaction_state.py` 及其测试未修改。它们只保护同一记录，不提供网站级恰好一次保证；正常执行不运行它们。子流程文件改名为 GUIDE.md，避免作为额外独立技能发现；业务规则仍以当前官网为准。上游更新时需对照上述整合改动，不能直接覆盖 GUIDE。
 

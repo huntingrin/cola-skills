@@ -19,8 +19,9 @@ ENTRY = "SKILL.md"
 # The Cola phone-fee fast path is inlined in the entry, so those branches read nothing else.
 ENTRY_BUDGET = 6500
 READ_PATHS = {
-    "移动 / 联通 / 电信": ([], ENTRY_BUDGET),
-    "联通短信方法（仅用户明确问）": (["skills/cucc-points-redeem/references/phonefee-text.md"], 7800),
+    "移动 / 电信": ([], ENTRY_BUDGET),
+    "联通话费方法": (["skills/cucc-points-redeem/GUIDE.md",
+                "skills/cucc-points-redeem/references/phonefee-text.md"], 8000),
     "移动异常核对": (["skills/cmcc-points-redeem/GUIDE.md"], 8400),
     "联通异常核对": (["skills/cucc-points-redeem/GUIDE.md"], 8600),
     "联通选品": (["skills/cucc-points-redeem/GUIDE.md",
@@ -141,18 +142,9 @@ class ColaFastPath(unittest.TestCase):
         self.assertIn("tool_call", self.text)
         self.assertIn('"profile":"cola"', self.text)
 
-    def test_unicom_is_handled_in_the_points_mall(self):
-        url = re.search(r'"targetUrl":"(https://uac\.10010\.com/[^"]+)"', self.text)
-        self.assertIsNotNone(url)
-        parts = urlsplit(url.group(1))
-        self.assertEqual(parts.path, "/portal/mallLogin.jsp")
-        target = urlsplit(parse_qs(parts.query)["redirectURL"][0])
-        self.assertEqual((target.netloc, target.path),
-                         ("img.client.10010.com", "/jifenshangchengpc/index.html"))
-        self.assertIn("「积分购买」（不点现金购买）", self.text)
-        # The SMS method stays a separate answer, not the onboarding outcome.
-        self.assertNotIn("JFCZ#", self.text)
-        self.assertIn("skills/cucc-points-redeem/references/phonefee-text.md", self.text)
+    def test_unicom_defers_to_its_unchanged_guide(self):
+        self.assertIn("skills/cucc-points-redeem/GUIDE.md", self.text)
+        self.assertNotIn("uac.10010.com", self.text)
 
     def test_telecom_goes_to_the_phone_without_the_browser(self):
         self.assertIn("https://apps.telefen.com/jycalls/?channelCode=HGOKHD", self.text)

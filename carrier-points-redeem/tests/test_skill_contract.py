@@ -19,9 +19,7 @@ ENTRY = "SKILL.md"
 # The Cola phone-fee fast path is inlined in the entry, so those branches read nothing else.
 ENTRY_BUDGET = 6500
 READ_PATHS = {
-    "移动 / 电信": ([], ENTRY_BUDGET),
-    "联通话费方法": (["skills/cucc-points-redeem/GUIDE.md",
-                "skills/cucc-points-redeem/references/phonefee-text.md"], 8000),
+    "移动 / 联通话费 / 电信": ([], ENTRY_BUDGET),
     "移动异常核对": (["skills/cmcc-points-redeem/GUIDE.md"], 8400),
     "联通异常核对": (["skills/cucc-points-redeem/GUIDE.md"], 8600),
     "联通选品": (["skills/cucc-points-redeem/GUIDE.md",
@@ -142,8 +140,13 @@ class ColaFastPath(unittest.TestCase):
         self.assertIn("tool_call", self.text)
         self.assertIn('"profile":"cola"', self.text)
 
-    def test_unicom_defers_to_its_unchanged_guide(self):
-        self.assertIn("skills/cucc-points-redeem/GUIDE.md", self.text)
+    def test_unicom_sms_text_is_inline_and_verbatim(self):
+        for line in ("感谢用户 **林福灿** 提供以下联通积分换话费方法：",
+                     "先查可兑面额：编辑 5011 发到 10010",
+                     "再兑换：编辑 JFCZ#金额 发到 10010，例如 JFCZ#10 就是兑 10 元",
+                     "按回复Y确认兑换，话费实时到账"):
+            self.assertIn(line, self.text)
+        self.assertNotIn("\u200b", self.text)
         self.assertNotIn("uac.10010.com", self.text)
 
     def test_telecom_goes_to_the_phone_without_the_browser(self):

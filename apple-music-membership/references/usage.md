@@ -5,6 +5,12 @@
 | 命令 | 行为与前提 |
 | --- | --- |
 | `python3 scripts/music_membership.py doctor` | 检查 macOS 与辅助功能权限；不领取、不取消。 |
+| `python3 scripts/music_membership.py preflight` | 环境闸门：辅助功能、系统代理（`scutil --proxy`）、`music.apple.com` 可达性、Music 页面是否渲染（`ok`/`blank`/`error`）。领取前必跑，`ok:false` 按 `hint` 停下。 |
+| `python3 scripts/music_membership.py page-health [--app 'App Store']` | 只读判断当前窗口页面是否渲染成功，返回 `status`、`errorText`、`labelCount`。 |
+| `python3 scripts/music_membership.py open-redeem [--timeout-ms 6000]` | 菜单「账户 → 兑换…」并等待兑换弹窗；等不到直接报错并提示先跑 `preflight`，不循环重点。 |
+| `python3 scripts/music_membership.py read-sheet [--app …]` | 读取当前弹窗／表单：按钮、输入框、正文，并给出 `alert`（弹窗里的错误／上限提示）与 `next_step`。 |
+| `python3 scripts/music_membership.py wait-sheet [--contains 文案] [--timeout-ms 8000]` | 轮询等弹窗或等某段文案出现，避免靠 sleep 猜时间。 |
+| `python3 scripts/music_membership.py type-code --code 兑换码` | 用真实键盘输入把兑换码敲进唯一输入框（AXValue 不触发前端，按钮不会亮）。 |
 | `python3 scripts/music_membership.py open-music` | 打开本机音乐 App；本人亲自登录。 |
 | `python3 scripts/music_membership.py snapshot` | 读取 Music 最新辅助功能界面；不读取输入框内容。不要保存含账号标识的原始日志。 |
 | `python3 scripts/music_membership.py inspect-offer` | GET 检查固定活动；不请求兑换码、不证明资格。 |
@@ -15,6 +21,8 @@
 | `python3 scripts/music_membership.py open-subscriptions` | 打开原生 App Store 订阅管理。 |
 | `python3 scripts/music_membership.py snapshot --app 'App Store'` | 观察当前 App Store 订阅详情，识别 Apple Music。 |
 | `python3 scripts/music_membership.py status --app 'App Store'` | 只读判定续费状态；仅 `renewal_disabled` 代表脚本观察到最终取消证据。 |
+
+`click` 默认在「弹窗优先、其次窗口」的范围内按 label 精确匹配，失败时自动降级为前缀匹配和包含匹配；需要限定范围时加 `--scope sheet|window`。
 
 `inspect-offer`、`redeem-link` 支持 `--url "已核对的活动 URL"`。固定活动入口为 `https://plus.migu.cn/c/0fxt2u`，可重复使用；不要假定当次兑换链接里的兑换码一次性或可重复使用。不要在日志、README 或分发包保存当次兑换链接。
 
@@ -32,6 +40,18 @@ python3 scripts/music_membership.py click --app 'App Store' --label "fresh snaps
 - `cancel`：只针对明确观察到、用户已授权取消的 Apple Music。其他订阅不处理。确认页再读取一次；立即失去权益时重新询问，脚本拒绝此类自动点击，用户确认后由本人手动操作。
 - 已取消：只核验，不重领、不续订。看到“订阅”“重新订阅”并不表示要点击它们。
 - 登录：停下来让本人输入账号、密码和验证码；不读取或代填这些内容。
+
+## 失败对照
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 页面空白／「出错了。请稍后再试。」 | 系统代理开着 | 请用户关代理，重跑 `preflight` |
+| 点了「兑换…」无弹窗 | 页面未渲染或菜单项变了 | 先 `preflight`；仍不行报告停止 |
+| 兑换按钮一直是灰的 | AXValue 填值没触发前端 | 改用 `type-code` |
+| 点击 0 命中 | 控件 label 比预期长（如「取消免费试用 如果现在取消…」） | 用短前缀 + 正确 `--role` |
+| `redeem-link` 无兑换链接 | 活动侧拒绝 | 按报错先 `preflight` 再 `inspect-offer` |
+| 菜单「兑换…」0 命中 | 有弹窗开着时它是灰的 | 复用已开的弹窗，别强点菜单 |
+| 点「兑换/Redeem」页面不动 | 该账户领取次数已达上限 | 看 `read-sheet` 的 `alert`；保留弹窗原样，不点按钮、不换码 |
 
 ## 状态解释
 

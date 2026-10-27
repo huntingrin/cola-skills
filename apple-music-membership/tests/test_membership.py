@@ -95,6 +95,29 @@ class MembershipTests(unittest.TestCase):
         self.assertEqual(network.call_count, 1)
         self.assertEqual(network.call_args.args[0].get_method(), 'GET')
 
+    def test_redemption_post_includes_campaign_user_agent(self):
+        campaign = mock.MagicMock()
+        campaign.__enter__.return_value = campaign
+        campaign.url = membership.DEFAULT_OFFER + '?group_id=fixture'
+        campaign.read.return_value = (b'<script>window.pageId="123";</script>'
+            b'<a data-diversion=\'{"eventType":"APPLE_MUSIC_EXCHANGE","forceLogin":false}\'></a>')
+        expected_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15'
+
+        def service(request, **kwargs):
+            if request.get_method() == 'GET':
+                return campaign
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            # Model the observed service rejecting issuance without the browser UA.
+            data = {'code': '200', 'data': {'redirectUrl': OFFICIAL}} if request.get_header('User-agent') == expected_ua else {'code': '400'}
+            response.read.return_value = json.dumps(data).encode()
+            return response
+
+        with mock.patch.object(membership.urllib.request, 'urlopen', side_effect=service) as network:
+            result = membership.request_offer(membership.DEFAULT_OFFER, issue=True)
+        self.assertEqual(result['redemption_url'], OFFICIAL)
+        self.assertEqual([call.args[0].get_method() for call in network.call_args_list], ['GET', 'POST'])
+
     def test_paid_offer_guard(self):
         with self.assertRaises(ValueError):
             membership.click_guard(snapshot('Apple Music 每月 12 元'), '订阅', 'claim', free=True)
@@ -203,6 +226,107 @@ class MembershipTests(unittest.TestCase):
             membership.main()
         native.assert_called_once_with('snapshot', 'App Store')
         self.assertEqual(json.loads(output.getvalue())['state'], 'renewal_disabled')
+
+
+
+class EnvironmentGateTests(unittest.TestCase):
+    """Preflight/redeem-entry helpers: pure parsing and loud failures, no real App calls."""
+
+    PROXY_ON = """<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : 7890
+  HTTPProxy : 127.0.0.1
+  HTTPSEnable : 1
+  HTTPSPort : 7890
+  HTTPSProxy : 127.0.0.1
+  SOCKSEnable : 0
+}
+"""
+
+    def test_parse_proxy_reads_enabled_services(self):
+        parsed = membership.parse_proxy(self.PROXY_ON)
+        self.assertTrue(parsed['enabled'])
+        self.assertEqual([s['service'] for s in parsed['services']], ['HTTP', 'HTTPS'])
+        self.assertEqual(parsed['services'][0]['port'], 7890)
+
+    def test_parse_proxy_off(self):
+        parsed = membership.parse_proxy('HTTPEnable : 0\nSOCKSEnable : 0\n')
+        self.assertFalse(parsed['enabled'])
+        self.assertEqual(parsed['services'], [])
+
+    def test_enter_code_rejects_bad_shape(self):
+        for bad in ['', 'has space', '短码', 'x' * 30]:
+            with self.assertRaises(ValueError):
+                membership.enter_code(bad)
+
+    def test_enter_code_uses_native_typing(self):
+        with mock.patch.object(membership, 'native', return_value={'typed': 12, 'matchesInput': True}) as native:
+            membership.enter_code('ABCD12345678')
+        native.assert_called_once_with('type', 'Music', 'ABCD12345678')
+
+    def test_redeemed_sheet_state(self):
+        state = membership.classify(snapshot('已兑换优惠 个人 1 个月免费，之后 ¥12.00/月。'))
+        self.assertEqual(state['state'], 'redeemed')
+        self.assertEqual(state['plan'], '个人')
+
+    def test_preflight_names_proxy_when_page_is_blank(self):
+        proxy = {'known': True, 'enabled': True,
+                 'services': [{'service': 'HTTP', 'host': '127.0.0.1', 'port': 7890}]}
+        with mock.patch.object(membership.platform, 'system', return_value='Darwin'), \
+             mock.patch.object(membership, 'system_proxy', return_value=proxy), \
+             mock.patch.object(membership, 'reachable', return_value={'ok': True, 'status': 200}), \
+             mock.patch.object(membership, 'native', side_effect=[
+                 {'accessibility': True}, {'opened': 'Music'}, {'status': 'blank', 'labelCount': 2}]) as native:
+            report = membership.preflight()
+        self.assertFalse(report['ok'])
+        self.assertIn('代理', report['hint'])
+        self.assertIn('关掉代理', report['hint'])
+        self.assertEqual(native.call_args_list[0].args[0], 'doctor')
+
+    def test_open_redeem_fails_loudly_without_sheet(self):
+        with mock.patch.object(membership, 'native', side_effect=[
+                {'opened': 'Music'}, {'exists': False}, {'clicked': '兑换…'}, {'exists': False}]):
+            with self.assertRaises(ValueError) as ctx:
+                membership.open_redeem()
+        self.assertIn('preflight', str(ctx.exception))
+
+    def test_open_redeem_stops_when_sheet_has_no_entry_point(self):
+        with mock.patch.object(membership, 'native', side_effect=[
+                {'opened': 'Music'}, {'exists': False}, {'clicked': '兑换…'},
+                {'exists': True, 'buttons': ['使用相机'], 'fields': []}]):
+            with self.assertRaises(ValueError):
+                membership.open_redeem()
+
+    def test_open_redeem_reuses_an_open_sheet(self):
+        sheet = {'exists': True, 'buttons': ['Enter Code Manually', 'Use Camera'], 'fields': []}
+        with mock.patch.object(membership, 'native', side_effect=[{'opened': 'Music'}, sheet]) as native:
+            result = membership.open_redeem()
+        self.assertTrue(result['reused_open_sheet'])
+        self.assertEqual(result['manual_entry_label'], 'Enter Code Manually')
+        self.assertIsNone(result['menu'])
+        self.assertEqual(native.call_count, 2)
+
+    def test_redeem_submit_allowed_from_a_code_sheet(self):
+        snap = {'nodes': [], 'sheet': {'fields': [{'label': 'Code', 'length': 12}], 'buttons': ['Code', 'Redeem']}}
+        self.assertTrue(membership.click_guard(snap, 'Redeem', 'navigate'))
+
+    def test_redeem_submit_blocked_without_a_code_sheet(self):
+        snap = {'nodes': [], 'windows': []}
+        with self.assertRaises(ValueError):
+            membership.click_guard(snap, '兑换', 'navigate')
+
+    def test_redemption_error_message_points_to_preflight(self):
+        with mock.patch.object(membership.urllib.request, 'urlopen', side_effect=Exception('offline')):
+            with self.assertRaises(Exception):
+                membership.request_offer(membership.DEFAULT_OFFER, issue=True)
+
+
+    def test_sheet_alert_surfaces_the_limit_message(self):
+        sheet = {'exists': True, 'texts': ['Redeem with Code', '你的代码使用已达上限。你兑换的代码数量已经达到每个 Apple 账户可兑换数量的上限。']}
+        self.assertIn('上限', membership.sheet_alert(sheet))
+
+    def test_sheet_alert_ignores_normal_copy(self):
+        self.assertIsNone(membership.sheet_alert({'exists': True, 'texts': ['Redeem with Code', 'Code', 'Redeem']}))
 
 
 if __name__ == '__main__':

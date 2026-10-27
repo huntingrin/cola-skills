@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+红包配置.json
+交付物/
+*.local.json

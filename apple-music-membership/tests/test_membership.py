@@ -285,22 +285,48 @@ class EnvironmentGateTests(unittest.TestCase):
 
     def test_open_redeem_fails_loudly_without_sheet(self):
         with mock.patch.object(membership, 'native', side_effect=[
-                {'opened': 'Music'}, {'clicked': '兑换…'}, {'exists': False}]):
+                {'opened': 'Music'}, {'exists': False}, {'clicked': '兑换…'}, {'exists': False}]):
             with self.assertRaises(ValueError) as ctx:
                 membership.open_redeem()
         self.assertIn('preflight', str(ctx.exception))
 
     def test_open_redeem_stops_when_sheet_has_no_entry_point(self):
         with mock.patch.object(membership, 'native', side_effect=[
-                {'opened': 'Music'}, {'clicked': '兑换…'},
+                {'opened': 'Music'}, {'exists': False}, {'clicked': '兑换…'},
                 {'exists': True, 'buttons': ['使用相机'], 'fields': []}]):
             with self.assertRaises(ValueError):
                 membership.open_redeem()
+
+    def test_open_redeem_reuses_an_open_sheet(self):
+        sheet = {'exists': True, 'buttons': ['Enter Code Manually', 'Use Camera'], 'fields': []}
+        with mock.patch.object(membership, 'native', side_effect=[{'opened': 'Music'}, sheet]) as native:
+            result = membership.open_redeem()
+        self.assertTrue(result['reused_open_sheet'])
+        self.assertEqual(result['manual_entry_label'], 'Enter Code Manually')
+        self.assertIsNone(result['menu'])
+        self.assertEqual(native.call_count, 2)
+
+    def test_redeem_submit_allowed_from_a_code_sheet(self):
+        snap = {'nodes': [], 'sheet': {'fields': [{'label': 'Code', 'length': 12}], 'buttons': ['Code', 'Redeem']}}
+        self.assertTrue(membership.click_guard(snap, 'Redeem', 'navigate'))
+
+    def test_redeem_submit_blocked_without_a_code_sheet(self):
+        snap = {'nodes': [], 'windows': []}
+        with self.assertRaises(ValueError):
+            membership.click_guard(snap, '兑换', 'navigate')
 
     def test_redemption_error_message_points_to_preflight(self):
         with mock.patch.object(membership.urllib.request, 'urlopen', side_effect=Exception('offline')):
             with self.assertRaises(Exception):
                 membership.request_offer(membership.DEFAULT_OFFER, issue=True)
+
+
+    def test_sheet_alert_surfaces_the_limit_message(self):
+        sheet = {'exists': True, 'texts': ['Redeem with Code', '你的代码使用已达上限。你兑换的代码数量已经达到每个 Apple 账户可兑换数量的上限。']}
+        self.assertIn('上限', membership.sheet_alert(sheet))
+
+    def test_sheet_alert_ignores_normal_copy(self):
+        self.assertIsNone(membership.sheet_alert({'exists': True, 'texts': ['Redeem with Code', 'Code', 'Redeem']}))
 
 
 if __name__ == '__main__':

@@ -100,7 +100,7 @@ python3 scripts/music_membership.py click --label "兑换" --role AXButton --int
 python3 scripts/music_membership.py read-sheet
 ```
 
-弹窗出现「你将获得免费试用…之后按 ¥12.00/月 自动续期」这类确认文案时，如实报告免费期与后续计费，再点「确认」。成功后界面会出现「已兑换优惠」；`read-sheet` 的正文＋`status` 的结果才是证据，`opened`／`clicked` 都不算。
+这一步是两段式：先点「兑换 / Redeem」看条款（这一步不生效），条款页出现「你将获得免费试用…之后按 ¥12.00/月 自动续期」时如实报告免费期与后续计费，再点「确认 / Confirm」——**「确认」才是提交**。`read-sheet` 返回的 `alert` 一旦非空就是被拒了，按 `next_step` 停下，不要换码重试。成功后界面会出现「已兑换优惠」；`read-sheet` 的正文＋`status` 的结果才是证据，`opened`／`clicked` 都不算。
 
 领取成功后再核验一次订阅状态（第 4 步的 `open-subscriptions` + `status`），确认 App Store 里出现 Apple Music 条目。
 
@@ -134,6 +134,9 @@ python3 scripts/music_membership.py status --app 'App Store'
 | 点击匹配到 0 个控件 | 控件文字比预期长 | 用更短的前缀作 `--label`，并核对 `--role` |
 | `redeem-link` 报没有兑换链接 | 活动侧拒绝／参数或 UA 问题 | 按报错提示先 `preflight`，再 `inspect-offer` 复核 |
 | `status` 返回 `needs_inspection` | 停在订阅列表页而非详情页 | 点开 Apple Music 条目后再读 |
+| 菜单「兑换…」匹配到 0 项 | 有弹窗开着时它本来就是灰的（模态） | `open-redeem` 会先找已开的弹窗并复用，不要强点菜单 |
+| 按钮文字是英文（`Redeem`、`Enter Code Manually`） | 同一弹窗的中英文渲染不固定 | 两种 label 都要认，别硬编码中文 |
+| 「你的代码使用已达上限」 | 同一 Apple 账户领取次数有限 | 停止换码重试，改为核验已有权益并告知用户 |
 
 ## 领取结果输出
 

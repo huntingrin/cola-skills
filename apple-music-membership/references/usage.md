@@ -8,7 +8,7 @@
 | `python3 scripts/music_membership.py preflight` | 环境闸门：辅助功能、系统代理（`scutil --proxy`）、`music.apple.com` 可达性、Music 页面是否渲染（`ok`/`blank`/`error`）。领取前必跑，`ok:false` 按 `hint` 停下。 |
 | `python3 scripts/music_membership.py page-health [--app 'App Store']` | 只读判断当前窗口页面是否渲染成功，返回 `status`、`errorText`、`labelCount`。 |
 | `python3 scripts/music_membership.py open-redeem [--timeout-ms 6000]` | 菜单「账户 → 兑换…」并等待兑换弹窗；等不到直接报错并提示先跑 `preflight`，不循环重点。 |
-| `python3 scripts/music_membership.py read-sheet [--app …]` | 读取当前弹窗／表单：按钮列表、输入框、正文。读取弹窗不再需要临时 JXA。 |
+| `python3 scripts/music_membership.py read-sheet [--app …]` | 读取当前弹窗／表单：按钮、输入框、正文，并给出 `alert`（弹窗里的错误／上限提示）与 `next_step`。 |
 | `python3 scripts/music_membership.py wait-sheet [--contains 文案] [--timeout-ms 8000]` | 轮询等弹窗或等某段文案出现，避免靠 sleep 猜时间。 |
 | `python3 scripts/music_membership.py type-code --code 兑换码` | 用真实键盘输入把兑换码敲进唯一输入框（AXValue 不触发前端，按钮不会亮）。 |
 | `python3 scripts/music_membership.py open-music` | 打开本机音乐 App；本人亲自登录。 |
@@ -50,6 +50,8 @@ python3 scripts/music_membership.py click --app 'App Store' --label "fresh snaps
 | 兑换按钮一直是灰的 | AXValue 填值没触发前端 | 改用 `type-code` |
 | 点击 0 命中 | 控件 label 比预期长（如「取消免费试用 如果现在取消…」） | 用短前缀 + 正确 `--role` |
 | `redeem-link` 无兑换链接 | 活动侧拒绝 | 按报错先 `preflight` 再 `inspect-offer` |
+| 菜单「兑换…」0 命中 | 有弹窗开着时它是灰的 | 复用已开的弹窗，别强点菜单 |
+| 点「兑换/Redeem」页面不动 | 该账户领取次数已达上限 | 看 `read-sheet` 的 `alert`，停止重试 |
 
 ## 状态解释
 

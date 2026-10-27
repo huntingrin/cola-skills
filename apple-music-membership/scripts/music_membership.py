@@ -176,18 +176,40 @@ def preflight(app='Music'):
     return report
 
 
+MANUAL_ENTRY_LABELS = ('手动输入兑换码', 'Enter Code Manually', 'Enter Code Manually…')
+
+SHEET_ALERT = re.compile(
+    r'上限|已达|已达到|无效|过期|不可用|失败|错误|无法|不支持'
+    r'|limit|already|invalid|expired|unavailable|cannot|can\'t|not available', re.I)
+
+
+def sheet_alert(sheet):
+    """Surface an in-sheet error/limit message so a silent no-op is reported instead of retried."""
+    hits = [t for t in sheet.get('texts', []) if t and SHEET_ALERT.search(t)]
+    return hits[0] if hits else None
+
+
 def open_redeem(app='Music', timeout_ms=6000):
-    """Account menu -> Redeem... and wait for the code sheet; fail loudly instead of silently."""
+    """Open the code sheet, reusing an already-open one.
+
+    A presented sheet is modal: the Account menu item stays disabled while it is up, so a blind
+    menu click finds nothing. Always look for an existing sheet first.
+    """
     native('activate', app)
-    clicked = native('redeem-menu', app)
-    sheet = native('wait', app, 'sheet', str(timeout_ms))
+    sheet = native('sheet', app)
+    reused = bool(sheet.get('exists'))
+    clicked = None
+    if not reused:
+        clicked = native('redeem-menu', app)
+        sheet = native('wait', app, 'sheet', str(timeout_ms))
     if not sheet.get('exists'):
         raise ValueError(
-            f"点击 {clicked.get('clicked')!r} 之后兑换弹窗没有出现。先跑 `preflight`：页面空白或系统代理开着是常见原因。不要循环重复点菜单。")
-    manual = any(b in ('手动输入兑换码', 'Enter Code Manually') for b in sheet.get('buttons', []))
+            f"点击 {(clicked or {}).get('clicked')!r} 之后兑换弹窗没有出现。先跑 `preflight`：页面空白或系统代理开着是常见原因。不要循环重复点菜单。")
+    manual = [b for b in sheet.get('buttons', []) if b in MANUAL_ENTRY_LABELS]
     if not manual and not sheet.get('fields'):
         raise ValueError(f"兑换弹窗打开了，但既没有手动输入按钮也没有兑换码输入框：{sheet.get('buttons')}")
-    return {'menu': clicked, 'sheet': sheet}
+    return {'menu': clicked, 'reused_open_sheet': reused, 'manual_entry_label': manual[0] if manual else None,
+            'sheet': sheet}
 
 
 def enter_code(code, app='Music'):
@@ -247,20 +269,44 @@ def classify(snapshot):
     return {'state': 'needs_inspection', 'reason': 'Final renewal state not yet proven'}
 
 
+def with_sheet_text(snapshot, app):
+    """Merge the live sheet's texts/buttons into a snapshot: offer terms live there, not in the window."""
+    try:
+        sheet = native('sheet', app)
+    except Exception:  # noqa: BLE001 - a missing sheet must not break the guard
+        return snapshot
+    merged = dict(snapshot)
+    if not sheet.get('exists'):
+        return merged
+    merged['sheet'] = sheet
+    nodes = list(snapshot.get('nodes', []))
+    nodes += [{'role': 'AXStaticText', 'text': t} for t in sheet.get('texts', [])]
+    nodes += [{'role': 'AXButton', 'name': b} for b in sheet.get('buttons', [])]
+    nodes += [{'role': 'AXTextField', 'name': f.get('label', ''), 'text': 'code' if f.get('length') else ''}
+              for f in sheet.get('fields', [])]
+    merged['nodes'] = nodes
+    return merged
+
+
 def click_guard(snapshot, label, intent, free=False):
     text = visible_text(snapshot)
+    sheet = snapshot.get('sheet') or {}
+    code_sheet = bool(sheet.get('fields')) or any(b in ('Code', '验证码') for b in sheet.get('buttons', []))
     if classify(snapshot)['state'] == 'login_required':
         raise ValueError('User must complete login; no automated credential actions')
     if intent == 'navigate':
-        if re.search(r'取消|Cancel|购买|Buy|确认|Confirm|兑换|Redeem|免费试用|Free Trial', label, re.I) or label in ['订阅', 'Subscribe', '续订', 'Resubscribe', '继续', 'Continue']:
+        # Two-step reality: "Redeem" only reveals the offer terms; "Confirm" is the commit.
+        if re.search(r'取消|Cancel|购买|Buy|确认|Confirm|免费试用|Free Trial', label, re.I) or label in ['订阅', 'Subscribe', '续订', 'Resubscribe', '继续', 'Continue']:
             raise ValueError('Use the appropriate authorized claim/cancel intent for this control')
+        if re.search(r'兑换|Redeem', label, re.I) and not code_sheet:
+            raise ValueError('Submit-redeem needs an open code sheet; use the authorized claim intent')
     elif intent == 'claim':
-        if re.search(r'你的订阅即将到期|优惠结束后继续订阅|已过期|has expired', text, re.I):
+        if re.search(r'升级|Upgrade|家人共享|Family', label, re.I):
+            raise ValueError('Do not change plans through this workflow')
+        if not code_sheet and re.search(r'你的订阅即将到期|优惠结束后继续订阅|已过期|has expired', text, re.I):
             raise ValueError('Expired/cancelled plan is not evidence of a new free offer')
         if not free or not re.search(r'免费|free|¥\s*0(?:\.00)?\b|RMB\s*0\b', text, re.I):
             raise ValueError('An observed free offer and --free-offer-confirmed are required')
-        if re.search(r'升级|Upgrade|家人共享|Family', label, re.I):
-            raise ValueError('Do not change plans through this workflow')
     elif intent == 'cancel':
         if 'Apple Music' not in text:
             raise ValueError('Cancellation target must be observed Apple Music')
@@ -348,6 +394,11 @@ def main():
         result = native('page-health', args.app)
     elif args.command == 'read-sheet':
         result = native('sheet', args.app)
+        alert = sheet_alert(result)
+        result['alert'] = alert
+        if alert:
+            result['next_step'] = ('兑换被拒（上面那条原文）。同一 Apple 账户的兑换次数有上限，'
+                                   '不要换码重试；改为核验已有权益或让用户确认。')
     elif args.command == 'wait-sheet':
         result = native('wait', args.app, args.contains or 'sheet', str(args.timeout_ms))
     elif args.command == 'open-redeem':
@@ -366,7 +417,9 @@ def main():
     elif args.command == 'click':
         if args.intent != 'navigate' and not args.authorize:
             raise ValueError('--authorize required for claim/cancellation actions')
-        snap = native('snapshot', args.app)
+        snap = {'nodes': [], 'windows': []} if args.scope == 'sheet' else native('snapshot', args.app)
+        if args.scope != 'window':
+            snap = with_sheet_text(snap, args.app)
         click_guard(snap, args.label, args.intent, args.free_offer_confirmed)
         result = native('click', args.app, args.label, args.role, args.scope)
         result['verified'] = False  # A dispatched click is not a business outcome.

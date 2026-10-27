@@ -150,11 +150,13 @@ function run(argv) {
         let account = proc.menuBars[0].menuBarItems.byName('账户');
         if (!account.exists()) account = proc.menuBars[0].menuBarItems.byName('Account');
         const items = account.menus[0].menuItems();
-        const matches = items.filter(function (x) { return pattern.test(get(x, 'name', '')) && get(x, 'enabled', false); });
+        const matches = items.filter(function (x) { return pattern.test(get(x, 'name', '')); });
         if (matches.length !== 1) throw Error('Menu item not unique (found ' + matches.length + ') for ' + action);
         proc.frontmost = true;
+        delay(0.2);
+        const wasEnabled = get(matches[0], 'enabled', false);
         matches[0].click();
-        return JSON.stringify({clicked: get(matches[0], 'name', '')});
+        return JSON.stringify({clicked: get(matches[0], 'name', ''), wasEnabled: wasEnabled, menus: items.map(function (x) { return get(x, 'name', ''); }).filter(function (n) { return n; })});
     }
 
     if (action === 'type') {

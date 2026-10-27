@@ -19,11 +19,12 @@ metadata:
 
 ```sh
 python3 scripts/music_membership.py doctor
-python3 scripts/music_membership.py open-music
-python3 scripts/music_membership.py snapshot
+python3 scripts/music_membership.py preflight
 ```
 
-doctor 检查 macOS 和辅助功能权限。缺权限时提示本人授权当前运行宿主；出现登录框时等待本人完成，再读取最新界面。已有目标账号登录态可以复用，需要再次验证时仍由本人操作。
+`doctor` 只查 macOS 和辅助功能权限。**任何领取、取消、核验动作之前先跑 `preflight`**，它一次给出四件事：辅助功能、系统代理状态、`music.apple.com` 可达性、Music 页面是否真的渲染出来（`ok` / `blank` / `error`）。`ok:false` 时按 `hint` 停下处理，不要继续点界面。
+
+登录弹窗出现时等待本人完成，再读取最新界面。已有目标账号登录态可以复用，需要再次验证时仍由本人操作。
 
 固定活动入口是 https://plus.migu.cn/c/0fxt2u ，无需每次解码。内置图片为 assets/活动二维码.jpg；仅在使用新二维码时调用可选的 Swift 解码脚本，需要可用的 Swift 工具链：
 
@@ -41,61 +42,98 @@ python3 scripts/music_membership.py decode-qr "用户提供的图片路径"
 - **操作边界**：只处理 Apple Music；已取消时只核验，不重领、不续订。每次点击使用最新界面的唯一 label 和 role；界面变化、加载、截断或目标不唯一时停止。
 - **取消条件**：可能立即失去权益时，先说明影响并取得本人确认，再由本人在原生界面操作。
 - **数据与结果**：交付不包含账号、兑换码或完整兑换链接。动作回执不能代替权益到账；证据不足报告待核验。不创建定时任务、后台续费或自动兑换任务。
+- **失败即停**：同一控件连续两次无效、或某个弹窗等不到，就停下来报告原因与下一步。不要循环重试同一动作，不要把「没反应」当成可以再点一次。
 
-这些是执行约定；当前脚本的完整点击保护、兑换链接输出脱敏和端到端稳定性仍需单独验证。
+## 环境预检与常见阻塞
+
+领取流程对代理极其敏感：系统代理开着时，Music 页面经常整页空白或显示「出错了。请稍后再试。」，而命令行 `curl`／Python 不走系统代理，会给出「网络正常」的假信号。
+
+- `preflight` 报 `page.status` 为 `blank` 或 `error`，且 `proxy.enabled` 为真：**直接告诉用户「可能是代理开着，Apple 服务加载不出来，先关掉代理再试」**，等用户确认关闭后重跑 `preflight`。
+- `page.status` 空白但没有代理：退出并重开 App 一次（`open-music` 之前先退出），仍空白就停止，不要反复点菜单栏。
+- 兑换弹窗点不出来时，先看 `preflight` 的页面状态，再考虑菜单项是否变了；不要连续点「兑换…」。
 
 ## 执行流程
 
-开场说明三步：“先由你登录，我核验优惠，再领取并确认结果。”沿用用户已经明确的目标，不重新选品。只取消或核验时，直接进入第 3 步。
+开场说明三步：“先由你登录，我核验优惠，再领取并确认结果。”沿用用户已经明确的目标，不重新选品。只取消或核验时，直接进入第 4 步。
 
-### 1. 核验活动
+### 1. 预检
+
+```sh
+python3 scripts/music_membership.py preflight
+```
+
+`ok:false` 时按上面的阻塞处理并停下。`ok:true` 才进入下一步。
+
+### 2. 核验活动
 
 ```sh
 python3 scripts/music_membership.py inspect-offer
 ```
 
-新活动传入已核对的 --url。inspect-offer 只检查活动配置，不请求兑换链接，也不证明账号有资格。活动失效、登录要求变化或重定向异常时停止，不盲目重试。
+新活动传入已核对的 `--url`。`inspect-offer` 只检查活动配置，不请求兑换链接，也不证明账号有资格。活动失效、登录要求变化或重定向异常时停止，不盲目重试。
 
-### 2. 领取并核验
+### 3. 领取
 
 只有用户已明确授权领取，才运行：
 
 ```sh
 python3 scripts/music_membership.py redeem-link --authorize
-python3 scripts/music_membership.py open-redemption --url "刚取得的官方 HTTPS 兑换链接"
-python3 scripts/music_membership.py snapshot
+python3 scripts/music_membership.py open-redeem
 ```
 
-新活动需将已核对的 --url 传给 redeem-link。不要批量索取、分发或假定兑换码可重复使用。open-redemption 将官方 HTTPS 链接转为 musics 协议打开 Music，opened 不代表领取成功。
+`redeem-link` 失败时它的报错已经写明原因和下一步（先 `preflight`，再 `inspect-offer` 复核活动），照做，不要立刻再要一次码。
 
-核对本人目标账号、免费期限、金额和后续计费说明，再使用刚观察到的按钮：
+`open-redeem` 会走菜单「账户 → 兑换…」并等到弹窗出现，再打开「手动输入兑换码」：
 
 ```sh
-python3 scripts/music_membership.py click --label "实际免费领取按钮文字" --role AXButton --intent claim --authorize --free-offer-confirmed
-python3 scripts/music_membership.py snapshot
+python3 scripts/music_membership.py click --label "手动输入兑换码" --role AXButton --intent navigate --scope sheet
+python3 scripts/music_membership.py type-code --code "用户授权后取得的兑换码"
 ```
 
-占位值和 role 均须以实际界面为准。free-offer-confirmed 表示已经观察并核对免费优惠，不能替代页面核验。
+**兑换码必须用 `type-code` 真实键入。** 直接写 AXValue 不会触发网页表单，兑换按钮会一直是灰的——这是本 Skill 2026-10-27 实测踩到的坑。
 
-点击后读取领取成功证据；verified:false 不写成成功。缺少到账证据时，主动请本人确认会员是否生效，避免重复领取。
+核对本人目标账号、免费期限、金额和后续计费说明，再点兑换：
 
-### 3. 按授权核验续费
+```sh
+python3 scripts/music_membership.py read-sheet
+python3 scripts/music_membership.py click --label "兑换" --role AXButton --intent claim --authorize --free-offer-confirmed --scope sheet
+python3 scripts/music_membership.py read-sheet
+```
+
+弹窗出现「你将获得免费试用…之后按 ¥12.00/月 自动续期」这类确认文案时，如实报告免费期与后续计费，再点「确认」。成功后界面会出现「已兑换优惠」；`read-sheet` 的正文＋`status` 的结果才是证据，`opened`／`clicked` 都不算。
+
+领取成功后再核验一次订阅状态（第 4 步的 `open-subscriptions` + `status`），确认 App Store 里出现 Apple Music 条目。
+
+### 4. 按授权核验续费
 
 ```sh
 python3 scripts/music_membership.py open-subscriptions
-python3 scripts/music_membership.py snapshot --app 'App Store'
 python3 scripts/music_membership.py status --app 'App Store'
 ```
 
-确认当前详情为 Apple Music。已经是 renewal_disabled 时结束；仍需取消且已获授权时：
+`status` 为 `needs_inspection` 通常表示还停在订阅列表页而不是详情页：点开 Apple Music 条目再读。已经是 `renewal_disabled` 时结束。
+
+仍需取消且已获授权时，界面上的取消入口可能是链接且文字很长（例如「取消免费试用 如果现在取消，你仍可在11月27日前访问此订阅」），**用前缀匹配**：
 
 ```sh
-python3 scripts/music_membership.py click --app 'App Store' --label "实际取消按钮文字" --role AXButton --intent cancel --authorize
+python3 scripts/music_membership.py click --app 'App Store' --label "取消免费试用" --role AXLink --intent cancel --authorize
+python3 scripts/music_membership.py read-sheet --app 'App Store'
+python3 scripts/music_membership.py click --app 'App Store' --label "取消订阅" --role AXButton --intent cancel --authorize
+python3 scripts/music_membership.py status --app 'App Store'
 ```
 
-确认页重新读取并核对。立即失去权益时按核心条件交给本人操作；不要处理其他订阅或把缺少取消按钮单独作为已取消证据。
+确认页会写清「服务将于 X 月 X 日结束」。只有明确到期日期、订阅／重新订阅按钮且无取消控件，才报告关闭续费。立即失去权益时交给本人操作。
 
-最后再次运行 status --app 'App Store'。只有明确到期日期、订阅／重新订阅按钮且无取消控件，才报告关闭续费。
+## 失败对照表
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| Music 页面空白／「出错了。请稍后再试。」 | 系统代理开着；Apple 服务加载失败 | 让用户关掉代理，重跑 `preflight` |
+| 「兑换…」点了没有弹窗 | 页面未渲染，或菜单项变化 | 先 `preflight`；仍不行就报告停止，不要连点 |
+| 兑换按钮一直是灰的 | 用 AXValue 填值没触发前端 | 改用 `type-code` 真实键入 |
+| 点击匹配到 0 个控件 | 控件文字比预期长 | 用更短的前缀作 `--label`，并核对 `--role` |
+| `redeem-link` 报没有兑换链接 | 活动侧拒绝／参数或 UA 问题 | 按报错提示先 `preflight`，再 `inspect-offer` 复核 |
+| `status` 返回 `needs_inspection` | 停在订阅列表页而非详情页 | 点开 Apple Music 条目后再读 |
 
 ## 领取结果输出
 
@@ -103,9 +141,9 @@ python3 scripts/music_membership.py click --app 'App Store' --label "实际取�
 
 - **领取状态**：已领取／未完成／仅核验已有权益，说明可见依据。
 - **权益期限**：实际免费时长和到期日期；无证据填“尚未确认”。
-- **自动续费**：已关闭／尚未确认，说明最终界面依据。
+- **自动续费**：已关闭／尚未开启确认，说明最终界面依据。
 - **后续操作**：受阻原因及本人需要完成的步骤；未取得到账证据时请本人确认。
 
 活动可介绍为“Apple Music 免费试用，资格与时长以账号实际页面为准”，不承诺固定免费月数。
 
-验证边界：原包记录过一个账号领取 2 个月、最终核验续费关闭，同时注明自动取消点击曾因界面变化未执行。完整新账号兑换和自动取消仍待验；历史单账号记录不代表其他账号、地区或时段同样适用。
+验证边界：2026-10-27 在本机跑通一次完整链路——咪咕活动取码、App 内兑换 1 个月免费、次月 ¥12.00/月、随后关闭自动续费、`status` 判为 `renewal_disabled`、到期日 2026-11-27。单账号结果不代表其他账号、地区或时段；换新账号兑换与「立即失去权益」类取消仍未经端到端验证。`musics://` 协议跳转与把 https 链接交给 Music 在本机实测均无反应，已不作为主路径。

@@ -228,5 +228,80 @@ class MembershipTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())['state'], 'renewal_disabled')
 
 
+
+class EnvironmentGateTests(unittest.TestCase):
+    """Preflight/redeem-entry helpers: pure parsing and loud failures, no real App calls."""
+
+    PROXY_ON = """<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : 7890
+  HTTPProxy : 127.0.0.1
+  HTTPSEnable : 1
+  HTTPSPort : 7890
+  HTTPSProxy : 127.0.0.1
+  SOCKSEnable : 0
+}
+"""
+
+    def test_parse_proxy_reads_enabled_services(self):
+        parsed = membership.parse_proxy(self.PROXY_ON)
+        self.assertTrue(parsed['enabled'])
+        self.assertEqual([s['service'] for s in parsed['services']], ['HTTP', 'HTTPS'])
+        self.assertEqual(parsed['services'][0]['port'], 7890)
+
+    def test_parse_proxy_off(self):
+        parsed = membership.parse_proxy('HTTPEnable : 0\nSOCKSEnable : 0\n')
+        self.assertFalse(parsed['enabled'])
+        self.assertEqual(parsed['services'], [])
+
+    def test_enter_code_rejects_bad_shape(self):
+        for bad in ['', 'has space', '短码', 'x' * 30]:
+            with self.assertRaises(ValueError):
+                membership.enter_code(bad)
+
+    def test_enter_code_uses_native_typing(self):
+        with mock.patch.object(membership, 'native', return_value={'typed': 12, 'matchesInput': True}) as native:
+            membership.enter_code('ABCD12345678')
+        native.assert_called_once_with('type', 'Music', 'ABCD12345678')
+
+    def test_redeemed_sheet_state(self):
+        state = membership.classify(snapshot('已兑换优惠 个人 1 个月免费，之后 ¥12.00/月。'))
+        self.assertEqual(state['state'], 'redeemed')
+        self.assertEqual(state['plan'], '个人')
+
+    def test_preflight_names_proxy_when_page_is_blank(self):
+        proxy = {'known': True, 'enabled': True,
+                 'services': [{'service': 'HTTP', 'host': '127.0.0.1', 'port': 7890}]}
+        with mock.patch.object(membership.platform, 'system', return_value='Darwin'), \
+             mock.patch.object(membership, 'system_proxy', return_value=proxy), \
+             mock.patch.object(membership, 'reachable', return_value={'ok': True, 'status': 200}), \
+             mock.patch.object(membership, 'native', side_effect=[
+                 {'accessibility': True}, {'opened': 'Music'}, {'status': 'blank', 'labelCount': 2}]) as native:
+            report = membership.preflight()
+        self.assertFalse(report['ok'])
+        self.assertIn('代理', report['hint'])
+        self.assertIn('关掉代理', report['hint'])
+        self.assertEqual(native.call_args_list[0].args[0], 'doctor')
+
+    def test_open_redeem_fails_loudly_without_sheet(self):
+        with mock.patch.object(membership, 'native', side_effect=[
+                {'opened': 'Music'}, {'clicked': '兑换…'}, {'exists': False}]):
+            with self.assertRaises(ValueError) as ctx:
+                membership.open_redeem()
+        self.assertIn('preflight', str(ctx.exception))
+
+    def test_open_redeem_stops_when_sheet_has_no_entry_point(self):
+        with mock.patch.object(membership, 'native', side_effect=[
+                {'opened': 'Music'}, {'clicked': '兑换…'},
+                {'exists': True, 'buttons': ['使用相机'], 'fields': []}]):
+            with self.assertRaises(ValueError):
+                membership.open_redeem()
+
+    def test_redemption_error_message_points_to_preflight(self):
+        with mock.patch.object(membership.urllib.request, 'urlopen', side_effect=Exception('offline')):
+            with self.assertRaises(Exception):
+                membership.request_offer(membership.DEFAULT_OFFER, issue=True)
+
+
 if __name__ == '__main__':
     unittest.main()

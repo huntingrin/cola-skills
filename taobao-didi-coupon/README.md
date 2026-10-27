@@ -49,6 +49,7 @@ references/onboarding.md     首次使用的完整对话分支和小白话术
 references/cola-delivery.md  MEDIA 交付、项目目录、发群/操作者文案分开
 references/project-setup.md  红包配置.json 的字段、复用和原子写入
 references/operator-guide.md 配单/选活动/询价时才读的历史运营资料
+scripts/resolve_config.mjs   查找项目里保存的链接（项目名变体也能认）
 scripts/make_qr.mjs          无依赖 QR PNG 生成器（vendor MIT qrcode-generator）
 scripts/check_link.mjs       无登录链接连通性检查
 tests/smoke.mjs              本地冒烟测试，不联网
@@ -57,6 +58,9 @@ tests/smoke.mjs              本地冒烟测试，不联网
 ## 脚本
 
 ```bash
+# 找已保存的链接（先跑这个，再决定要不要问链接）
+node <skill-dir>/scripts/resolve_config.mjs --current "$PWD"
+
 # 生成 PNG（8px/模块，4 模块留白，ECC M）
 node <skill-dir>/scripts/make_qr.mjs "<完整链接>" "<项目目录>/交付物/淘宝闪购-红包二维码.png"
 

@@ -6,6 +6,17 @@
 SKILL_DIR="$(dirname "<SKILL.md 的绝对路径>")"
 ```
 
+## resolve_config.mjs
+
+```bash
+node "$SKILL_DIR/scripts/resolve_config.mjs" --current "$PWD"
+```
+
+- 查当前项目、Cola 项目登记、`outputs/*` 里名字像红包项目的目录。
+- 项目名去掉空格、`·`、`-`、括号后匹配；`淘宝闪购·滴滴红包码` 和 `淘宝闪购 · 滴滴红包二维码` 都算。
+- 输出 JSON：`usable`、`missing`、`platforms`（每个平台带 `url`、`qrcode`、`qrcodeExists`、`sourceDir`）、`best`、`candidates`、`conflicts`。
+- 只读，不写配置，不联网。
+
 ## make_qr.mjs
 
 ```bash

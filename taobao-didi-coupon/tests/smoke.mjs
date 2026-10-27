@@ -46,6 +46,81 @@ try {
   ok(parsed.ok === false, 'unreachable URL should be ok:false')
   ok(Array.isArray(parsed.warnings), 'check_link warnings missing')
 
+  // resolve_config: the saved project is named with a middle dot and no
+  // "二维码", which a literal name lookup used to miss.
+  const home = path.join(tmp, 'home')
+  const project = path.join(home, 'outputs', '淘宝闪购·滴滴红包码')
+  const current = path.join(tmp, 'current')
+  fs.mkdirSync(path.join(project, '交付物'), { recursive: true })
+  fs.mkdirSync(current, { recursive: true })
+  fs.mkdirSync(path.join(home, 'projects'), { recursive: true })
+  fs.writeFileSync(path.join(project, '交付物', '淘宝闪购-红包二维码.png'), 'png')
+  fs.writeFileSync(path.join(project, '交付物', '滴滴-红包二维码.png'), 'png')
+  fs.writeFileSync(path.join(project, '红包配置.json'), JSON.stringify({
+    淘宝闪购: {
+      url: 'https://example.com/taobao?scene=abc',
+      qrcode: '交付物/淘宝闪购-红包二维码.png',
+      qrcode_url: 'https://example.com/taobao?scene=abc'
+    },
+    滴滴出行: {
+      url: 'https://example.com/didi?source_id=abc',
+      qrcode: '交付物/滴滴-红包二维码.png',
+      qrcode_url: 'https://example.com/didi?source_id=abc'
+    }
+  }, null, 2))
+  fs.writeFileSync(path.join(home, 'projects', 'project.json'), JSON.stringify({
+    projects: [{
+      id: 'smoke',
+      name: '淘宝闪购·滴滴红包码',
+      workspaceDir: project
+    }]
+  }))
+
+  const resolved = run([
+    path.join(root, 'scripts/resolve_config.mjs'),
+    '--current', current,
+    '--cola-home', home,
+    '--root', path.join(home, 'outputs'),
+    '--no-global'
+  ])
+  ok(resolved.status === 0, `resolve_config exit ${resolved.status}: ${resolved.stderr}`)
+  const saved = JSON.parse(resolved.stdout)
+  ok(saved.usable === true, 'resolve_config should find both platforms')
+  ok(saved.missing.length === 0, 'resolve_config should report no missing platform')
+  ok(saved.platforms['淘宝闪购'].url.includes('scene=abc'), 'taobao URL missing')
+  ok(saved.platforms['滴滴出行'].url.includes('source_id=abc'), 'didi URL missing')
+  ok(saved.platforms['淘宝闪购'].qrcodeExists === true, 'taobao QR should exist')
+  ok(saved.best.name === '淘宝闪购·滴滴红包码', 'resolve_config should find the middle-dot name')
+
+  const home2 = path.join(tmp, 'home2')
+  const onlyTaobao = path.join(home2, 'outputs', '淘宝闪购-红包二维码')
+  fs.mkdirSync(onlyTaobao, { recursive: true })
+  fs.writeFileSync(path.join(onlyTaobao, '红包配置.json'), JSON.stringify({
+    淘宝闪购: { url: 'https://example.com/only-taobao' }
+  }))
+  const partial = JSON.parse(run([
+    path.join(root, 'scripts/resolve_config.mjs'),
+    '--current', current,
+    '--cola-home', home2,
+    '--root', path.join(home2, 'outputs'),
+    '--no-global'
+  ]).stdout)
+  ok(partial.usable === false, 'partial config should not be usable')
+  ok(partial.missing.includes('滴滴出行'), 'partial config should report missing didi')
+
+  const broken = path.join(home2, 'outputs', '滴滴红包码-坏配置')
+  fs.mkdirSync(broken, { recursive: true })
+  fs.writeFileSync(path.join(broken, '红包配置.json'), '{not json')
+  const brokenRun = run([
+    path.join(root, 'scripts/resolve_config.mjs'),
+    '--current', current,
+    '--cola-home', home2,
+    '--root', path.join(home2, 'outputs'),
+    '--no-global'
+  ])
+  ok(brokenRun.status === 0, 'malformed config should not crash resolve_config')
+  ok(JSON.parse(brokenRun.stdout).candidates.some((item) => item.error), 'malformed config should be reported')
+
   console.log('SMOKE: ok')
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true })

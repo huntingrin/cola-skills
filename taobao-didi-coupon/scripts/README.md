@@ -1,31 +1,21 @@
 # scripts
 
-两个无外部依赖的 Node 脚本。路径相对技能根目录解析；运行时不要假设当前目录就是技能目录：
+默认发码流程不需要跑脚本；这里只用于换码维护。路径相对技能根目录解析：
 
 ```bash
 SKILL_DIR="$(dirname "<SKILL.md 的绝对路径>")"
 ```
 
-## resolve_config.mjs
-
-```bash
-node "$SKILL_DIR/scripts/resolve_config.mjs" --current "$PWD"
-```
-
-- 查当前项目、Cola 项目登记、`outputs/*` 里名字像红包项目的目录。
-- 项目名去掉空格、`·`、`-`、括号后匹配；`淘宝闪购·滴滴红包码` 和 `淘宝闪购 · 滴滴红包二维码` 都算。
-- 输出 JSON：`usable`、`missing`、`platforms`（每个平台带 `url`、`qrcode`、`qrcodeExists`、`sourceDir`）、`best`、`candidates`、`conflicts`。
-- 只读，不写配置，不联网。
-
 ## make_qr.mjs
 
 ```bash
-node "$SKILL_DIR/scripts/make_qr.mjs" "<完整链接>" "<项目目录>/交付物/<平台>-红包二维码.png"
+node "$SKILL_DIR/scripts/make_qr.mjs" "<完整链接>" "$SKILL_DIR/assets/<平台>-红包二维码.png"
 ```
 
 - 生成 PNG，8px/模块，4 模块留白，ECC M。
 - 不联网、不装依赖、不用图像模型。
 - 输出 `QR: <绝对路径>`、`MODULES`、`SIZE`、`BYTES`。
+- 覆盖前先备份旧图；同一个活动不要混用不同文件。
 - QR 矩阵来自 `vendor/qrcode.js`（qrcode-generator，MIT，见 `vendor/LICENSE-qrcode-generator.txt`）；PNG 容器由本脚本用 `zlib` 写入。
 
 ## check_link.mjs

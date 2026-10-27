@@ -51,7 +51,7 @@ python3 scripts/music_membership.py click --app 'App Store' --label "fresh snaps
 | 点击 0 命中 | 控件 label 比预期长（如「取消免费试用 如果现在取消…」） | 用短前缀 + 正确 `--role` |
 | `redeem-link` 无兑换链接 | 活动侧拒绝 | 按报错先 `preflight` 再 `inspect-offer` |
 | 菜单「兑换…」0 命中 | 有弹窗开着时它是灰的 | 复用已开的弹窗，别强点菜单 |
-| 点「兑换/Redeem」页面不动 | 该账户领取次数已达上限 | 看 `read-sheet` 的 `alert`，停止重试 |
+| 点「兑换/Redeem」页面不动 | 该账户领取次数已达上限 | 看 `read-sheet` 的 `alert`；保留弹窗原样，不点按钮、不换码 |
 
 ## 状态解释
 

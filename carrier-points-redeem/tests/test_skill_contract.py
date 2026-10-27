@@ -140,6 +140,12 @@ class ColaFastPath(unittest.TestCase):
         self.assertIn("tool_call", self.text)
         self.assertIn('"profile":"cola"', self.text)
 
+    def test_startup_blank_page_is_reused_via_navigate(self):
+        self.assertIn('"action":"tabs"', self.text)
+        self.assertIn('"action":"navigate"', self.text)
+        self.assertIn("about:blank", self.text)
+        self.assertIn('"action":"navigate","profile":"cola"', self.text)
+
     def test_unicom_sms_text_is_inline_and_verbatim(self):
         for line in ("感谢用户 **林福灿** 提供以下联通积分换话费方法：",
                      "先查可兑面额：编辑 5011 发到 10010",

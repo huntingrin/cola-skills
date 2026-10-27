@@ -16,17 +16,22 @@ description: Cola 三网积分兑换：移动 AI 豆在 Cola 浏览器兑本机�
 
 ## 1. 浏览器调用（移动、联通商城共用）
 
-- `browser` 是延迟加载工具。先调一次 `tool_search`（query `select:browser`），之后每次用 `tool_call`，`name` 为 `browser`，`arguments` 填下文参数。不先调 status / start / tabs。
-- 每次都带 `"profile":"cola"`；open 后记下返回的 `targetId`，之后每次都带上。本对话已有该运营商的页面就接着用，没有才 open，且只 open 一次；超时不重开，先用 tabs 找回那页。
+- `browser` 是延迟加载工具。先调一次 `tool_search`（query `select:browser`），之后每次用 `tool_call`，`name` 为 `browser`，`arguments` 填下文参数。不先调 status / start。
+- 首次进入某运营商流程，先 `tabs` 一次选页（`{"action":"tabs","profile":"cola"}`）；每次都带 `"profile":"cola"`，并记下返回的 `targetId`：
+  - 没有页，或只有 `about:blank` → 用 `navigate` 把这页直接导航到登录 URL（没有页时省略 `targetId`，`navigate` 会启动浏览器并复用初始空白页），不要 `open`。
+  - 已有同运营商的页面 → 接续原 `targetId`，不新建。
+  - 已有其他页面 → 才用 `open` 新建；结束前用 `close` 关掉自己的 `about:blank`，不关有内容的页。
+  - 每次任务只打开一次；超时不重开，先用 `tabs` 找回那页。
 - 读页面用 `{"action":"snapshot","profile":"cola","targetId":"…","limit":150}`；点击用快照里的 ref：`{"action":"act","profile":"cola","targetId":"…","kind":"click","ref":"e12"}`。页面变了先重新 snapshot 再操作，不猜 selector。点击打开新标签页时，用 tabs 取新页 `targetId`，不重复点。
 - Cola 浏览器是一个有界面的独立窗口，本人在那个窗口里登录、填验证码。
 
 ## 2. 移动：AI 豆兑本机话费
 
-1. **打开登录页**：`{"action":"open","profile":"cola","targetUrl":"https://jf.10086.cn/#/loginPage?back=true"}`，马上 snapshot（`limit:80`）。
+1. **打开登录页**：先按第 1 节 `tabs`；无页 / 仅 `about:blank` 用 `navigate` 直达，已有其他页才 `open`。例如复用启动空白页（无页时省略 `targetId`）：
+   `{"action":"navigate","profile":"cola","targetId":"…","targetUrl":"https://jf.10086.cn/#/loginPage?back=true"}`，马上 snapshot（`limit:80`）。
    - 有「请输入移动手机号码」「请输入短信验证码」两个输入框和「登录」按钮 → 第 2 步。
    - 落到首页（欢迎访问、商品分类）→ 点欢迎卡片的「登录」或顶部「请登录」，只点一个，再 snapshot 确认表单。不能把首页交给用户。
-   - 空白 → `{"action":"act","profile":"cola","targetId":"…","kind":"wait","text":"登录","timeoutMs":10000}` 后再 snapshot；仍空白就原页 navigate 同一地址一次。
+   - 空白 → `{"action":"act","profile":"cola","targetId":"…","kind":"wait","text":"登录","timeoutMs":10000}` 后再 snapshot；仍空白就原页 navigate 同一地址一次，不重开。
 2. **交接登录**，本轮到此结束：
    > 已在 Cola 浏览器打开中国移动积分商城的登录页。请在那个窗口填手机号、获取并填写短信验证码登录，好了回我「好了」。想兑多少元话费也可以一起告诉我。
 3. **读账户**：用户说好了，snapshot。不在话费兑换区就同页 navigate `https://jf.10086.cn/#/` 进话费兑换。读脱敏号码、普通 AI 豆、积分商城专属 AI 豆（两类不能相加，专属豆不默认用于话费）、可选面额 / 自定义金额及对应「使用 X AI 豆」。没读到的写未知，空白不当 0。

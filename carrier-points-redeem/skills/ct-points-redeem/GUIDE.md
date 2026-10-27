@@ -9,7 +9,7 @@ Cola 中入口默认把电信话费交给本人手机办理（Cola 浏览器无�
 
 ## 登录直达
 
-新任务默认未登录，第一步直接打开下面的完整官方登录地址；不先访问话费专区，不检查 UA、日期或旧会话。桌面环境也能打开登录表单。
+新任务默认未登录，按入口第 1 节先 `tabs`：无页 / 仅 `about:blank` 用 `navigate` 复用启动空白页，已有电信页接续，只有其他页才 `open`；再打开下面的完整官方登录地址。不先访问话费专区，不检查 UA、日期或旧会话。桌面环境也能打开登录表单。
 
 <https://m.telefen.com/MobileSSOV2/Login.aspx?goBack=https%3A%2F%2Fapps.telefen.com%2Fjycalls%2Fsso%2FssoLogin%2Flogin%3FloginUrl%3Dhttps%253A%252F%252Fapps.telefen.com%252Fjycalls%252Fsso%252FssoLogin%252Flogin%26goBack%3Dhttps%253A%252F%252Fapps.telefen.com%252Fjycalls%252F%253FchannelCode%253DHGOKHD%26errPage%3Dhttps%253A%252F%252Fcdn.img.telefen.com%252Fwebstatic%252Fsso%252Ferror.html%253Fmsg%253D%26ssoType%3D1%26channelCode%3DHGOKHD&channelCode=HGOKHD&appCode=CALLS>
 

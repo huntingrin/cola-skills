@@ -7,7 +7,7 @@
 //   node check_link.mjs "<url>"
 //
 // Prints JSON:
-//   { ok, status, finalHost, finalPath, loginWrapper, params, warnings }
+//   { ok, status, finalHost, finalPath, loginWrapper, metaRedirect, params, warnings }
 
 const url = process.argv[2]
 
@@ -20,8 +20,10 @@ if (!url) fail('usage: node check_link.mjs "<url>"')
 if (!/^https?:\/\//i.test(url)) fail('url must start with http:// or https://')
 if (/[\r\n\t]/.test(url)) fail('url must not contain whitespace or newlines')
 
-function collectParams(input) {
-  const keys = new Set()
+const MOBILE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+
+function collectParams(input, keys) {
   let inner = null
   try {
     const parsed = new URL(input)
@@ -35,32 +37,52 @@ function collectParams(input) {
         // The redirect value is not a URL; keep the outer params only.
       }
     }
-    return { outer: parsed, inner, keys }
+    return { outer: parsed, inner }
   } catch {
-    return { outer: null, inner: null, keys }
+    return { outer: null, inner: null }
   }
 }
 
-const parsed = collectParams(url)
+const keys = new Set()
+const parsed = collectParams(url, keys)
 if (!parsed.outer) fail('url could not be parsed')
 
-const warnings = []
-const outerSid = parsed.outer.searchParams.get('sid')
-const innerSid = parsed.inner?.searchParams.get('sid') ?? null
-if (outerSid === '123456' || innerSid === '123456') {
-  warnings.push('sid_placeholder')
+function findMetaRefresh(html, baseUrl) {
+  const tags = html.match(/<meta\b[^>]*>/gi) || []
+  for (const tag of tags) {
+    if (!/http-equiv\s*=\s*["']?refresh["']?/i.test(tag)) continue
+    const content =
+      tag.match(/content\s*=\s*["']([^"']*)["']/i)?.[1] ??
+      tag.match(/content\s*=\s*([^\s>]+)/i)?.[1]
+    if (!content) continue
+    const target = content.match(/url\s*=\s*['"]?([^'";>]+)/i)?.[1]
+    if (!target) continue
+    try {
+      return new URL(target.trim(), baseUrl)
+    } catch {
+      return null
+    }
+  }
+  return null
 }
-const hasAttribution =
-  parsed.keys.has('sid') ||
-  parsed.keys.has('scene') ||
-  parsed.keys.has('spm') ||
-  parsed.keys.has('o2i_shortlink') ||
-  [...parsed.keys].some((key) => key.startsWith('utm_'))
-if (!hasAttribution) warnings.push('no_attribution_params')
 
-const loginWrapper =
-  parsed.outer.pathname.includes('/login') ||
-  parsed.outer.searchParams.has('redirect')
+async function readCapped(response, maxBytes = 64 * 1024) {
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const chunks = []
+  let total = 0
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(Buffer.from(value))
+      total += value.length
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return Buffer.concat(chunks).subarray(0, maxBytes).toString('utf8')
+}
 
 const controller = new AbortController()
 const timer = setTimeout(() => controller.abort(), 15000)
@@ -71,28 +93,77 @@ try {
     redirect: 'follow',
     signal: controller.signal,
     headers: {
-      'user-agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      'user-agent': MOBILE_UA,
       accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
     }
   })
-  const finalUrl = response.url || url
-  const final = new URL(finalUrl)
-  if (response.status >= 400) warnings.push('http_error')
-  if (final.pathname.includes('/login')) warnings.push('login_page')
+  let finalUrl = response.url || url
+  let status = response.status
+  const contentType = response.headers.get('content-type') || ''
+  let metaRedirect = null
 
-  // The body is irrelevant; release it so the process can exit promptly.
-  await response.body?.cancel()
+  if (response.status < 400 && /text\/html|text\/plain/i.test(contentType)) {
+    const html = await readCapped(response)
+    metaRedirect = findMetaRefresh(html, finalUrl)
+  } else {
+    await response.body?.cancel()
+  }
+
+  if (metaRedirect && /^https?:$/i.test(metaRedirect.protocol) && metaRedirect.href !== finalUrl) {
+    const metaResponse = await fetch(metaRedirect.href, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent': MOBILE_UA,
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    })
+    status = metaResponse.status
+    finalUrl = metaResponse.url || metaRedirect.href
+    await metaResponse.body?.cancel()
+  }
+
+  const final = new URL(finalUrl)
+  collectParams(finalUrl, keys)
+  if (metaRedirect) collectParams(metaRedirect.href, keys)
+
+  const warnings = []
+  let sid = parsed.outer.searchParams.get('sid')
+  if (!sid && parsed.inner) sid = parsed.inner.searchParams.get('sid')
+  if (!sid) sid = new URL(finalUrl).searchParams.get('sid')
+  if (sid === '123456') warnings.push('sid_placeholder')
+
+  const hasAttribution =
+    keys.has('sid') ||
+    keys.has('scene') ||
+    keys.has('spm') ||
+    keys.has('o2i_shortlink') ||
+    keys.has('source_id') ||
+    keys.has('channel_id') ||
+    keys.has('entrance_channel') ||
+    keys.has('dchn') ||
+    [...keys].some((key) => key.startsWith('utm_'))
+  if (!hasAttribution) warnings.push('no_attribution_params')
+  if (status >= 400) warnings.push('http_error')
+  if (parsed.outer.pathname.includes('/login') || parsed.outer.searchParams.has('redirect')) {
+    warnings.push('login_page')
+  } else if (final.pathname.includes('/login')) {
+    warnings.push('login_page')
+  }
 
   console.log(
     JSON.stringify(
       {
-        ok: response.status >= 200 && response.status < 400,
-        status: response.status,
+        ok: status >= 200 && status < 400,
+        status,
         finalHost: final.hostname,
         finalPath: final.pathname,
-        loginWrapper,
-        params: [...parsed.keys].sort(),
+        loginWrapper:
+          parsed.outer.pathname.includes('/login') ||
+          parsed.outer.searchParams.has('redirect'),
+        metaRedirect: Boolean(metaRedirect),
+        params: [...keys].sort(),
         warnings
       },
       null,
@@ -107,9 +178,12 @@ try {
         status: null,
         finalHost: parsed.outer.hostname,
         finalPath: parsed.outer.pathname,
-        loginWrapper,
-        params: [...parsed.keys].sort(),
-        warnings: [...warnings, 'network_error'],
+        loginWrapper:
+          parsed.outer.pathname.includes('/login') ||
+          parsed.outer.searchParams.has('redirect'),
+        metaRedirect: false,
+        params: [...keys].sort(),
+        warnings: ['network_error'],
         error: error?.name === 'AbortError' ? 'timeout' : String(error?.message ?? error)
       },
       null,

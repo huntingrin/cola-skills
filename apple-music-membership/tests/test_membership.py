@@ -95,6 +95,29 @@ class MembershipTests(unittest.TestCase):
         self.assertEqual(network.call_count, 1)
         self.assertEqual(network.call_args.args[0].get_method(), 'GET')
 
+    def test_redemption_post_includes_campaign_user_agent(self):
+        campaign = mock.MagicMock()
+        campaign.__enter__.return_value = campaign
+        campaign.url = membership.DEFAULT_OFFER + '?group_id=fixture'
+        campaign.read.return_value = (b'<script>window.pageId="123";</script>'
+            b'<a data-diversion=\'{"eventType":"APPLE_MUSIC_EXCHANGE","forceLogin":false}\'></a>')
+        expected_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15'
+
+        def service(request, **kwargs):
+            if request.get_method() == 'GET':
+                return campaign
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            # Model the observed service rejecting issuance without the browser UA.
+            data = {'code': '200', 'data': {'redirectUrl': OFFICIAL}} if request.get_header('User-agent') == expected_ua else {'code': '400'}
+            response.read.return_value = json.dumps(data).encode()
+            return response
+
+        with mock.patch.object(membership.urllib.request, 'urlopen', side_effect=service) as network:
+            result = membership.request_offer(membership.DEFAULT_OFFER, issue=True)
+        self.assertEqual(result['redemption_url'], OFFICIAL)
+        self.assertEqual([call.args[0].get_method() for call in network.call_args_list], ['GET', 'POST'])
+
     def test_paid_offer_guard(self):
         with self.assertRaises(ValueError):
             membership.click_guard(snapshot('Apple Music 每月 12 元'), '订阅', 'claim', free=True)

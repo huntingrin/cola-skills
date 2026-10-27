@@ -83,7 +83,9 @@ def request_offer(url, issue=False):
         return {'kind': 'reusable_campaign', 'campaign_url': url, 'resolved_url': final,
                 'page_id': payload['pageId'], 'exchange_available': True, 'redemption_requested': False}
     req = urllib.request.Request(MIGU_ENDPOINT, data=json.dumps(payload).encode(),
-                                 headers={'Content-Type': 'application/json', 'Referer': final}, method='POST')
+                                 headers={'Content-Type': 'application/json', 'Referer': final,
+                                          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/605.1.15'},
+                                 method='POST')
     with urllib.request.urlopen(req, timeout=30) as response:
         result = json.load(response)
     if str(result.get('code')) != '200' or not isinstance(result.get('data'), dict):

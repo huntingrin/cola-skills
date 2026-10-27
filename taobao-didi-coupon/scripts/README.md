@@ -23,7 +23,8 @@ node "$SKILL_DIR/scripts/make_qr.mjs" "<完整链接>" "<项目目录>/交付物
 node "$SKILL_DIR/scripts/check_link.mjs" "<完整链接>"
 ```
 
-- 跟随重定向做一次 GET，不登录、不带 cookie、不验券。
-- 输出 JSON：`ok`、`status`、`finalHost`、`finalPath`、`loginWrapper`、`params`、`warnings`。
+- 跟随重定向和 HTML meta refresh 短链做一次 GET，不登录、不带 cookie、不验券。
+- 输出 JSON：`ok`、`status`、`finalHost`、`finalPath`、`loginWrapper`、`metaRedirect`、`params`、`warnings`。
 - `ok` 只代表链接能打开，不代表券还能领或佣金能到账。
+- `metaRedirect: true` 表示短链先跳了一次，正常；看最终 host 和参数。
 - `warnings` 可能是 `sid_placeholder`、`no_attribution_params`、`login_page`、`http_error`、`network_error`。

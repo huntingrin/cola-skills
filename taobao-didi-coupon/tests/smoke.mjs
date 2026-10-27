@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Minimal smoke test for the two bundled scripts. No network required.
-// Run from the skill root: node tests/smoke.mjs
+// Minimal smoke test for the bundled QR assets and maintenance scripts.
+// No network required. Run from the skill root: node tests/smoke.mjs
 
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -22,7 +22,27 @@ function ok(condition, message) {
   }
 }
 
+function pngInfo(file) {
+  const data = fs.readFileSync(file)
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  return {
+    bytes: data.length,
+    isPng: data.subarray(0, 8).equals(signature),
+    width: data.length >= 24 ? data.readUInt32BE(16) : 0,
+    height: data.length >= 24 ? data.readUInt32BE(20) : 0
+  }
+}
+
 try {
+  for (const name of ['淘宝闪购-红包二维码.png', '滴滴-红包二维码.png']) {
+    const file = path.join(root, 'assets', name)
+    ok(fs.existsSync(file), `missing asset: ${name}`)
+    const info = pngInfo(file)
+    ok(info.isPng, `not a PNG: ${name}`)
+    ok(info.bytes > 300, `asset too small: ${name}`)
+    ok(info.width >= 200 && info.height >= 200, `asset too small: ${name} ${info.width}x${info.height}`)
+  }
+
   const qrPath = path.join(tmp, 'qr.png')
   const qr = run([
     path.join(root, 'scripts/make_qr.mjs'),
@@ -32,9 +52,7 @@ try {
   ok(qr.status === 0, `make_qr exit ${qr.status}: ${qr.stderr}`)
   ok(qr.stdout.includes('VERIFY: png-ok'), 'make_qr did not print VERIFY: png-ok')
   ok(fs.existsSync(qrPath), 'QR file missing')
-  const png = fs.readFileSync(qrPath)
-  ok(png.length > 100, 'QR file too small')
-  ok(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), 'not a PNG')
+  ok(pngInfo(qrPath).isPng, 'generated file is not a PNG')
 
   const bad = run([path.join(root, 'scripts/check_link.mjs'), 'ftp://example.com'])
   ok(bad.status === 2, 'check_link should reject non-http(s) URLs')

@@ -2,58 +2,63 @@
 name: apple-music-membership
 description: >
   仅适用于 macOS／原生应用的 AppleMusic 免费会员领取、取消续费与状态核验流程，以 Mac 本机音乐 App 为主线，订阅管理使用原生 App Store；账号必须本人亲自登录。触发词：Apple Music、AppleMusic 免费会员、苹果音乐活动领取、音乐会员二维码、取消自动续费、取消订阅、核验到期日期。内置可重复使用的固定活动二维码，也支持用户提供新二维码；不创建定时任务，不自动付费。
+metadata:
+  author: Cola 团队
+  product: Cola
+  homepage: https://colaos.ai
+  product-description: Cola 是你的 AI 拍档，在电脑上理解任务、调用工具并完成工作。
 ---
 
 # Apple Music 免费会员与续费管理
 
-对外可介绍“免费 AppleMusic 1–6 个月，因账号而异”；这是宣传口径，不保证所有账号有资格或都有 1–6 个月，实际时长以该账号兑换页面为准，不固定为 2 个月。
-仅调度当前流程；不要创建定时任务、后台续费任务或自动兑换任务。
-所有相对路径按本 skill 根目录解析。运行命令前切换到该目录。
-使用 Python 3、macOS 原生 Music／App Store 和系统辅助功能；不依赖网页代登录。
-需要命令细节或异常说明时，读 `references/usage.md`。
+## 环境配置
 
-## 1. 确认目标和授权
+使用 Python 3、macOS 原生 Music／App Store 和系统辅助功能。当前执行宿主需要辅助功能与自动化权限；账号由本人亲自登录。
 
-区分用户要领取、取消 Apple Music 自动续费，还是只核验现有状态。
-领取和取消都需有用户授权；用户已明确要求“领取并取消续费”时视为同时授权，不重复询问。只核验不等于授权领取或取消。
-已经取消时只核验，不重新领取、不点击订阅或续订。
-不读取、保存、索取或代填账号密码、验证码；账号由本人亲自登录。
-日志和交付内容不包含用户账号或当次兑换链接／兑换码。
-
-## 2. 检查本机环境
+所有相对路径按本 Skill 根目录解析，运行命令前切换到该目录：
 
 ```sh
 python3 scripts/music_membership.py doctor
 python3 scripts/music_membership.py open-music
+python3 scripts/music_membership.py snapshot
 ```
 
-`doctor` 必须确认 macOS 和辅助功能权限。缺权限时提示用户授权当前运行宿主。
-账号须由本人登录；已经登录的目标账号可以复用，兑换要求再次验证时仍由本人完成。
-提醒：“请你本人在本机音乐 App 登录；密码和验证码由你自行输入。”
-随后运行 `snapshot`。出现登录框时暂停，等本人完成后再取 fresh snapshot。
-不要尝试自动输入、复制或采集任何登录字段。
-用户只要求取消或核验时直接进入第 6 步；已经领取本次活动的账号也先核验现有订阅，不重复兑换。
+doctor 检查 macOS 和辅助功能权限。缺权限时提示本人授权当前运行宿主；出现登录框时等待本人完成，再读取最新界面。已有目标账号登录态可以复用，需要再次验证时仍由本人操作。
 
-## 3. 只读检查活动
-
-固定活动二维码为 `assets/活动二维码.jpg`，活动入口可重复使用：
-`https://plus.migu.cn/c/0fxt2u`。
-无需每次解码；二维码是活动入口，不是已核实的一次性兑换码。
-用户给新二维码时先只读解码，核对活动域名；未知域名停止，不自行请求。
+固定活动入口是 https://plus.migu.cn/c/0fxt2u ，无需每次解码。内置图片为 assets/活动二维码.jpg；仅在使用新二维码时调用可选的 Swift 解码脚本，需要可用的 Swift 工具链：
 
 ```sh
-python3 scripts/music_membership.py decode-qr
-# 新二维码：decode-qr "用户提供的图片路径"
-python3 scripts/music_membership.py inspect-offer
-# 新活动：inspect-offer --url "已核对的官方活动 HTTPS URL"
+python3 scripts/music_membership.py decode-qr "用户提供的图片路径"
 ```
 
-`inspect-offer` 只检查当前活动，不请求兑换链接，也不证明该账号有资格。
-活动失效、登录要求变化、重定向异常时停止并报告，不盲目重试请求。
+新二维码先只读解码并核对域名，未知域名停止。命令细节见 [使用说明](references/usage.md)。
 
-## 4. 授权领取并打开原生兑换
+## 核心条件
 
-只有用户明确授权领取，才运行：
+- **目标与授权**：区分领取、取消 Apple Music 自动续费、只核验状态。用户已明确说“领取并取消续费”即同时授权，不重复询问；只核验不等于授权变更。
+- **本人登录**：不读取、保存、索取或代填账号密码、验证码。本人在本机 App 输入，账号标识不回传。
+- **优惠与权益**：免费资格、金额、时长和后续计费以该账号实际兑换页面为准。条件不清楚、账号不符或资格不符时暂停，不转付费或更改套餐。
+- **操作边界**：只处理 Apple Music；已取消时只核验，不重领、不续订。每次点击使用最新界面的唯一 label 和 role；界面变化、加载、截断或目标不唯一时停止。
+- **取消条件**：可能立即失去权益时，先说明影响并取得本人确认，再由本人在原生界面操作。
+- **数据与结果**：交付不包含账号、兑换码或完整兑换链接。动作回执不能代替权益到账；证据不足报告待核验。不创建定时任务、后台续费或自动兑换任务。
+
+这些是执行约定；当前脚本的完整点击保护、兑换链接输出脱敏和端到端稳定性仍需单独验证。
+
+## 执行流程
+
+开场说明三步：“先由你登录，我核验优惠，再领取并确认结果。”沿用用户已经明确的目标，不重新选品。只取消或核验时，直接进入第 3 步。
+
+### 1. 核验活动
+
+```sh
+python3 scripts/music_membership.py inspect-offer
+```
+
+新活动传入已核对的 --url。inspect-offer 只检查活动配置，不请求兑换链接，也不证明账号有资格。活动失效、登录要求变化或重定向异常时停止，不盲目重试。
+
+### 2. 领取并核验
+
+只有用户已明确授权领取，才运行：
 
 ```sh
 python3 scripts/music_membership.py redeem-link --authorize
@@ -61,29 +66,20 @@ python3 scripts/music_membership.py open-redemption --url "刚取得的官方 HT
 python3 scripts/music_membership.py snapshot
 ```
 
-新活动需将已核对的 `--url` 传给 `redeem-link`。
-不要假定当次兑换码一次性或可重复使用；不要批量索取、缓存或分发它。
-`open-redemption` 验证官方 HTTPS 链接后转换为本机已注册的 `musics` 协议，打开 Music。
-协议注册已查，但完整新账号领取跳转仍待验；`opened` 不是领取成功。
-每次跳转后取 fresh snapshot，确认实际进入音乐 App 的兑换界面。
-核对目标账号（不回传账号标识）、免费金额／期限、资格和后续计费说明。
-免费信息不足、账号不符或资格不符时暂停；不要转付费方案或更改套餐。
+新活动需将已核对的 --url 传给 redeem-link。不要批量索取、分发或假定兑换码可重复使用。open-redemption 将官方 HTTPS 链接转为 musics 协议打开 Music，opened 不代表领取成功。
 
-## 5. 按实际界面点击并核验领取
-
-先取 fresh snapshot，只使用其中刚观察到的唯一 `label` + `role`，不用坐标或旧索引。
+核对本人目标账号、免费期限、金额和后续计费说明，再使用刚观察到的按钮：
 
 ```sh
 python3 scripts/music_membership.py click --label "实际免费领取按钮文字" --role AXButton --intent claim --authorize --free-offer-confirmed
 python3 scripts/music_membership.py snapshot
 ```
 
-占位文字不是可直接执行的按钮名；role 也必须以实际观察为准。
-`claim` 必须同时具备用户授权、观察到免费优惠及上述两个授权参数。
-按钮不唯一、UI 变化、加载中、snapshot 截断或脚本报错时重新观察，不盲点。
-点击结果只是动作回执；须观察领取成功证据，不能把 `verified: false` 写成成功。
+占位值和 role 均须以实际界面为准。free-offer-confirmed 表示已经观察并核对免费优惠，不能替代页面核验。
 
-## 6. 仅取消明确授权的 Apple Music
+点击后读取领取成功证据；verified:false 不写成成功。缺少到账证据时，主动请本人确认会员是否生效，避免重复领取。
+
+### 3. 按授权核验续费
 
 ```sh
 python3 scripts/music_membership.py open-subscriptions
@@ -91,24 +87,25 @@ python3 scripts/music_membership.py snapshot --app 'App Store'
 python3 scripts/music_membership.py status --app 'App Store'
 ```
 
-在原生 App Store 确认当前详情明确为 Apple Music，再找实际取消控件。
-已是 `renewal_disabled` 就结束，不重领、不续订。
-若需取消，用户明确授权后用 fresh snapshot 的唯一 label + role：
+确认当前详情为 Apple Music。已经是 renewal_disabled 时结束；仍需取消且已获授权时：
 
 ```sh
 python3 scripts/music_membership.py click --app 'App Store' --label "实际取消按钮文字" --role AXButton --intent cancel --authorize
 ```
 
-确认页仍需重新 snapshot，再核对并使用相同取消授权规则。
-如果提示立即失去权益，暂停并再次询问是否接受；脚本会阻止此类点击，确认后由本人在原生 UI 操作。
-不要取消其他订阅，不把“没有取消按钮”单独作为已取消证据。
-最终再次运行 `status --app 'App Store'`：只有明示到期、存在订阅／重新订阅按钮、且无取消控件才确认关闭续费。
+确认页重新读取并核对。立即失去权益时按核心条件交给本人操作；不要处理其他订阅或把缺少取消按钮单独作为已取消证据。
 
-## 7. 返回结果与验证边界
+最后再次运行 status --app 'App Store'。只有明确到期日期、订阅／重新订阅按钮且无取消控件，才报告关闭续费。
 
-分别报告：领取状态、权益到期日期、自动续费状态、尚未完成的步骤和原因。
-证据不足用“未完成／待核验”，不要推测成功或日期；未知状态停止变更。
-实测：2026-10-27，一个用户账号领取免费 2 个月后，已核验 Apple Music 个人订阅于 12 月 27 日到期、显示“你的订阅即将到期”，可按 12 元／月重新订阅。
-这是当时账号的证据，不保证其他账号、地区、时段享有同样优惠。
-此前取消点击遇 UI 变化，脚本未发出动作；后来仅核验已取消状态，不能宣称自动取消端到端已测。
-纯函数／mock 单测与只读 UI 可验证；完整新账号兑换及自动取消仍待验。
+## 领取结果输出
+
+分别返回：
+
+- **领取状态**：已领取／未完成／仅核验已有权益，说明可见依据。
+- **权益期限**：实际免费时长和到期日期；无证据填“尚未确认”。
+- **自动续费**：已关闭／尚未确认，说明最终界面依据。
+- **后续操作**：受阻原因及本人需要完成的步骤；未取得到账证据时请本人确认。
+
+活动可介绍为“Apple Music 免费试用，资格与时长以账号实际页面为准”，不承诺固定免费月数。
+
+验证边界：原包记录过一个账号领取 2 个月、最终核验续费关闭，同时注明自动取消点击曾因界面变化未执行。完整新账号兑换和自动取消仍待验；历史单账号记录不代表其他账号、地区或时段同样适用。
